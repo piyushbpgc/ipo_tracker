@@ -191,10 +191,12 @@ def open_spreadsheet():
 
 
 def get_or_create_ws(spreadsheet, name):
-    try:
-        return spreadsheet.worksheet(name)
-    except gspread.exceptions.WorksheetNotFound:
-        return spreadsheet.add_worksheet(title=name, rows=2000, cols=12)
+    """Find a tab ignoring stray spaces/capitalisation, so we never make a duplicate."""
+    target = name.strip().lower()
+    for ws in spreadsheet.worksheets():
+        if ws.title.strip().lower() == target:
+            return ws
+    return spreadsheet.add_worksheet(title=name, rows=2000, cols=12)
 
 
 def in_sheet2(rec):
@@ -283,55 +285,65 @@ def main():
     ws3 = get_or_create_ws(ss, SHEET3_NAME)     # Net Profit/Loss
 
     if REBUILD:
-        print("REBUILD is ON: wiping master + Good sheets (set False for daily use).")
-        ws1.clear(); ws2.clear()
+        print("REBUILD is ON: wiping all three sheets (set False for daily use).")
+        ws1.clear(); ws2.clear(); ws3.clear()
 
     rows1 = ws1.get_all_values()
-    prev_sheet2 = names_in(ws2.get_all_values())     # who was in Good_IPOs BEFORE
+    rows2 = ws2.get_all_values()
+    is_first_run = (len(rows2) <= 1)            # Good_IPOs empty -> first population
 
-    # ---- IPOs 25-26: add-only master list (8 cols, H = Diff) -------------
-    set_header(ws1, MASTER_HEADERS, MASTER_LAST_COL)
-    existing1 = names_in(rows1)
-    next1 = max(2, len(rows1) + 1)
-    block1, r1, added = [], next1, 0
+    # Write headers ONLY when a sheet is empty (never touch existing rows).
+    if len(rows1) == 0:
+        set_header(ws1, MASTER_HEADERS, MASTER_LAST_COL); rows1 = [MASTER_HEADERS]
+    if len(rows2) == 0:
+        set_header(ws2, GOOD_HEADERS, GOOD_LAST_COL); rows2 = [GOOD_HEADERS]
+
+    existing1 = names_in(rows1)                 # already in IPOs 25-26
+    existing2 = names_in(rows2)                 # already in Good_IPOs
+
+    # ---- IPOs 25-26: append only brand-new IPOs -------------------------
+    next1, block1, r1, added1 = max(2, len(rows1) + 1), [], 0, 0
+    r1 = next1
     for rec in records:
         if rec["company"].lower() in existing1:
             continue
         block1.append(make_master_row(rec, r1)); r1 += 1
-        existing1.add(rec["company"].lower())
-        added += 1
+        existing1.add(rec["company"].lower()); added1 += 1
     write_block(ws1, next1, block1, MASTER_LAST_COL)
 
-    # ---- Good_IPOs: full refresh (9 cols, H = G-F-25, I = profit) --------
-    qualifiers = [rec for rec in records if in_sheet2(rec)]
-    ws2.clear()
-    set_header(ws2, GOOD_HEADERS, GOOD_LAST_COL)
-    block2 = [make_good_row(rec, i + 2) for i, rec in enumerate(qualifiers)]
-    write_block(ws2, 2, block2, GOOD_LAST_COL)
+    # ---- Good_IPOs: append only IPOs that have NEWLY crossed 25% --------
+    next2, block2, r2, new_crossers = max(2, len(rows2) + 1), [], 0, []
+    r2 = next2
+    for rec in records:
+        if not in_sheet2(rec):                  # not above 25% yet
+            continue
+        if rec["company"].lower() in existing2: # already counted before
+            continue
+        block2.append(make_good_row(rec, r2)); r2 += 1
+        existing2.add(rec["company"].lower())
+        new_crossers.append(rec)
+    write_block(ws2, next2, block2, GOOD_LAST_COL)
 
-    # ---- Net Profit/Loss: rollup of Good_IPOs ---------------------------
-    g = SHEET2_NAME
-    summary = [
-        ["Metric", "Value"],
-        ["Total Invested (Rs)", f"=COUNTA('{g}'!A2:A)*{INVESTMENT_PER_IPO}"],
-        ["Total Profit (Rs)", f"=SUM('{g}'!I2:I)"],
-        ["Net Profit / Loss (%)", '=IFERROR(B3/B2*100,"")'],
-    ]
-    ws3.clear()
-    ws3.update(values=summary, range_name="A1:B4", value_input_option="USER_ENTERED")
+    # ---- Net Profit/Loss: set up ONCE (formulas auto-update afterwards) -
+    if len(ws3.get_all_values()) == 0:
+        g = SHEET2_NAME
+        summary = [
+            ["Metric", "Value"],
+            ["Total Invested (Rs)", f"=COUNTA('{g}'!A2:A)*{INVESTMENT_PER_IPO}"],
+            ["Total Profit (Rs)", f"=SUM('{g}'!I2:I)"],
+            ["Net Profit / Loss (%)", '=IFERROR(B3/B2*100,"")'],
+        ]
+        ws3.update(values=summary, range_name="A1:B4", value_input_option="USER_ENTERED")
+        print("Net Profit/Loss tab set up.")
 
-    # ---- Email: IPOs in Good_IPOs now that were NOT before --------------
-    new_crossers = [rec for rec in qualifiers if rec["company"].lower() not in prev_sheet2]
-    is_first_run = (len(prev_sheet2) == 0)
+    print(f"Done. {SHEET1_NAME}: +{added1} new IPO(s). "
+          f"{SHEET2_NAME}: +{len(new_crossers)} newly crossed 25%.")
 
-    print(f"Done. {SHEET1_NAME}: +{added} new (now {len(existing1)} total). "
-          f"{SHEET2_NAME}: {len(qualifiers)} over {SHEET2_DIFF_THRESHOLD}%. "
-          f"{len(new_crossers)} newly crossed.")
-
+    # ---- Email ONCE for the IPOs that just crossed into Good_IPOs -------
     if new_crossers and not (is_first_run and not EMAIL_ON_FIRST_RUN):
         send_alert_email(new_crossers)
     elif new_crossers:
-        print("First run: seeding the alert memory, no email sent.")
+        print("First run: seeded Good_IPOs, no email sent.")
 
 
 if __name__ == "__main__":
