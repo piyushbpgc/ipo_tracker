@@ -24,8 +24,10 @@ import os
 YEARS = ["2025", "2026"]            # all the years you want, on one line
 
 SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
-SHEET1_NAME = "Sheet1"
-SHEET2_NAME = "Sheet2"
+SHEET1_NAME = "IPOs 25-26"        # the full master list
+SHEET2_NAME = "Good_IPOs"         # only IPOs more than 25% above listing
+SHEET3_NAME = "Net Profit/Loss"   # the summary / rollup tab
+INVESTMENT_PER_IPO = 10000        # rupees invested per Good IPO (used in profit calc)
 CREDENTIALS_PATH = os.environ.get(
     "IPO_CREDENTIALS_PATH", r"C:\Users\YourName\Desktop\IPOTracker\credentials.json")
 
@@ -68,11 +70,20 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     )
 }
-COLUMN_HEADERS = [
+# IPOs 25-26 (master) keeps the plain Diff column in H.
+MASTER_HEADERS = [
     "IPO Name", "Listing Date", "Issue Price", "Listing Day Price",
     "Current Price", "Listing Gain", "Current Return", "Diff (Current - Listing)",
 ]
-LAST_COL = "H"
+MASTER_LAST_COL = "H"
+
+# Good_IPOs gets two extra columns: a net-return-from-+25%-entry and a profit.
+GOOD_HEADERS = [
+    "IPO Name", "Listing Date", "Issue Price", "Listing Day Price",
+    "Current Price", "Listing Gain", "Current Return",
+    "Net Return % (entry at +25%)", f"Profit (Rs {INVESTMENT_PER_IPO})",
+]
+GOOD_LAST_COL = "I"
 
 
 # ----------------------------- scraping --------------------------------------
@@ -194,29 +205,41 @@ def in_sheet2(rec):
     return rec["diff"] < SHEET2_DIFF_THRESHOLD
 
 
-def make_row(rec, row_num):
+def _cmp_cell(rec):
     if USE_GOOGLEFINANCE_FORMULA and rec["ticker"]:
-        cmp_cell = f'=GOOGLEFINANCE("NSE:{rec["ticker"]}","price")'
-    elif rec["cmp"] != "":
-        cmp_cell = rec["cmp"]
-    else:
-        cmp_cell = "SYMBOL NOT FOUND"
+        return f'=GOOGLEFINANCE("NSE:{rec["ticker"]}","price")'
+    if rec["cmp"] != "":
+        return rec["cmp"]
+    return "SYMBOL NOT FOUND"
+
+
+def make_master_row(rec, row_num):
+    """8 columns A-H; H = plain Diff (Current Return - Listing Gain)."""
     current_return = f'=IFERROR(((E{row_num}-C{row_num})/C{row_num})*100,"")'   # G
     difference = f'=IFERROR(G{row_num}-F{row_num},"")'                           # H
     return [rec["company"], rec["listing_date"], rec["issue_price"], rec["listing_price"],
-            cmp_cell, rec["listing_gain"], current_return, difference]
+            _cmp_cell(rec), rec["listing_gain"], current_return, difference]
 
 
-def set_header(ws):
-    ws.update(values=[COLUMN_HEADERS], range_name=f"A1:{LAST_COL}1",
+def make_good_row(rec, row_num):
+    """9 columns A-I; H = G-F-25 (entry at +25%), I = profit on INVESTMENT_PER_IPO."""
+    current_return = f'=IFERROR(((E{row_num}-C{row_num})/C{row_num})*100,"")'   # G
+    net_return = f'=IFERROR(G{row_num}-F{row_num}-25,"")'                        # H
+    profit = f'=IFERROR({INVESTMENT_PER_IPO}*H{row_num}/100,"")'                 # I
+    return [rec["company"], rec["listing_date"], rec["issue_price"], rec["listing_price"],
+            _cmp_cell(rec), rec["listing_gain"], current_return, net_return, profit]
+
+
+def set_header(ws, headers, last_col):
+    ws.update(values=[headers], range_name=f"A1:{last_col}1",
               value_input_option="USER_ENTERED")
 
 
-def write_block(ws, start_row, block):
+def write_block(ws, start_row, block, last_col):
     if not block:
         return
     end_row = start_row + len(block) - 1
-    ws.update(values=block, range_name=f"A{start_row}:{LAST_COL}{end_row}",
+    ws.update(values=block, range_name=f"A{start_row}:{last_col}{end_row}",
               value_input_option="USER_ENTERED")
 
 
@@ -255,42 +278,54 @@ def main():
         return
 
     ss = open_spreadsheet()
-    ws1 = get_or_create_ws(ss, SHEET1_NAME)
-    ws2 = get_or_create_ws(ss, SHEET2_NAME)
+    ws1 = get_or_create_ws(ss, SHEET1_NAME)     # IPOs 25-26 (master)
+    ws2 = get_or_create_ws(ss, SHEET2_NAME)     # Good_IPOs
+    ws3 = get_or_create_ws(ss, SHEET3_NAME)     # Net Profit/Loss
 
     if REBUILD:
-        print("REBUILD is ON: wiping both sheets (set REBUILD = False for daily use).")
+        print("REBUILD is ON: wiping master + Good sheets (set False for daily use).")
         ws1.clear(); ws2.clear()
 
     rows1 = ws1.get_all_values()
-    prev_sheet2 = names_in(ws2.get_all_values())      # who was in Sheet2 BEFORE this run
+    prev_sheet2 = names_in(ws2.get_all_values())     # who was in Good_IPOs BEFORE
 
-    # ---- Sheet1: add-only master list ------------------------------------
-    set_header(ws1)
+    # ---- IPOs 25-26: add-only master list (8 cols, H = Diff) -------------
+    set_header(ws1, MASTER_HEADERS, MASTER_LAST_COL)
     existing1 = names_in(rows1)
     next1 = max(2, len(rows1) + 1)
     block1, r1, added = [], next1, 0
     for rec in records:
         if rec["company"].lower() in existing1:
             continue
-        block1.append(make_row(rec, r1)); r1 += 1
+        block1.append(make_master_row(rec, r1)); r1 += 1
         existing1.add(rec["company"].lower())
         added += 1
-    write_block(ws1, next1, block1)
+    write_block(ws1, next1, block1, MASTER_LAST_COL)
 
-    # ---- Sheet2: full refresh = current IPOs with Diff > threshold --------
+    # ---- Good_IPOs: full refresh (9 cols, H = G-F-25, I = profit) --------
     qualifiers = [rec for rec in records if in_sheet2(rec)]
     ws2.clear()
-    set_header(ws2)
-    block2 = [make_row(rec, i + 2) for i, rec in enumerate(qualifiers)]
-    write_block(ws2, 2, block2)
+    set_header(ws2, GOOD_HEADERS, GOOD_LAST_COL)
+    block2 = [make_good_row(rec, i + 2) for i, rec in enumerate(qualifiers)]
+    write_block(ws2, 2, block2, GOOD_LAST_COL)
 
-    # ---- Email: IPOs that are in Sheet2 now but were NOT before ----------
+    # ---- Net Profit/Loss: rollup of Good_IPOs ---------------------------
+    g = SHEET2_NAME
+    summary = [
+        ["Metric", "Value"],
+        ["Total Invested (Rs)", f"=COUNTA('{g}'!A2:A)*{INVESTMENT_PER_IPO}"],
+        ["Total Profit (Rs)", f"=SUM('{g}'!I2:I)"],
+        ["Net Profit / Loss (%)", '=IFERROR(B3/B2*100,"")'],
+    ]
+    ws3.clear()
+    ws3.update(values=summary, range_name="A1:B4", value_input_option="USER_ENTERED")
+
+    # ---- Email: IPOs in Good_IPOs now that were NOT before --------------
     new_crossers = [rec for rec in qualifiers if rec["company"].lower() not in prev_sheet2]
     is_first_run = (len(prev_sheet2) == 0)
 
-    print(f"Done. Sheet1 +{added} new IPO(s) (now {len(existing1)} total). "
-          f"Sheet2 has {len(qualifiers)} IPO(s) over {SHEET2_DIFF_THRESHOLD}%. "
+    print(f"Done. {SHEET1_NAME}: +{added} new (now {len(existing1)} total). "
+          f"{SHEET2_NAME}: {len(qualifiers)} over {SHEET2_DIFF_THRESHOLD}%. "
           f"{len(new_crossers)} newly crossed.")
 
     if new_crossers and not (is_first_run and not EMAIL_ON_FIRST_RUN):
