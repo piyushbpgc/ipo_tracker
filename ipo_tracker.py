@@ -38,7 +38,7 @@ INCLUDE_REITS_INVITS = False
 # - an IPO moves to Good_IPOs when its gain-since-listing is above this %, and
 # - it is also the assumed buy point, so Net Return = Current - Listing - this %.
 # Change this single line to use a different marker (e.g. 30).
-CROSSING_MARK = 25
+CROSSING_MARK = 40
 SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING_MARK
 
 # One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
