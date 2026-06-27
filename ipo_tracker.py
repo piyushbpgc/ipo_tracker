@@ -36,7 +36,7 @@ INCLUDE_REITS_INVITS = False
 
 # Sheet2 filter. Diff = Current Return - Listing Gain (column H).
 SHEET2_DIRECTION = "above"          # "above": in Sheet2 when Diff > threshold
-SHEET2_DIFF_THRESHOLD = 25
+SHEET2_DIFF_THRESHOLD = 40
 
 # One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
 REBUILD = False
