@@ -21,7 +21,7 @@ import os
 #  >>>>>>>>>>>>>>>>>>>>>>  CONFIG  -  EDIT ONLY THIS BLOCK  <<<<<<<<<<<<<<<<<<<<<<
 # -----------------------------------------------------------------------------
 
-YEARS = ["2024","2025", "2026"]            # all the years you want, on one line
+YEARS = ["2025", "2026"]            # all the years you want, on one line
 
 SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
 SHEET1_NAME = "IPOs 25-26"        # the full master list
@@ -34,9 +34,12 @@ CREDENTIALS_PATH = os.environ.get(
 USE_GOOGLEFINANCE_FORMULA = True
 INCLUDE_REITS_INVITS = False
 
-# Sheet2 filter. Diff = Current Return - Listing Gain (column H).
-SHEET2_DIRECTION = "above"          # "above": in Sheet2 when Diff > threshold
-SHEET2_DIFF_THRESHOLD = 25
+# THE ONE NUMBER THAT CONTROLS EVERYTHING:
+# - an IPO moves to Good_IPOs when its gain-since-listing is above this %, and
+# - it is also the assumed buy point, so Net Return = Current - Listing - this %.
+# Change this single line to use a different marker (e.g. 30).
+CROSSING_MARK = 25
+SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING_MARK
 
 # One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
 REBUILD = False
@@ -81,7 +84,7 @@ MASTER_LAST_COL = "H"
 GOOD_HEADERS = [
     "IPO Name", "Listing Date", "Issue Price", "Listing Day Price",
     "Current Price", "Listing Gain", "Current Return",
-    "Net Return % (entry at +25%)", f"Profit (Rs {INVESTMENT_PER_IPO})",
+    f"Net Return % (entry at +{CROSSING_MARK}%)", f"Profit (Rs {INVESTMENT_PER_IPO})",
 ]
 GOOD_LAST_COL = "I"
 
@@ -203,8 +206,8 @@ def in_sheet2(rec):
     if rec["diff"] is None:
         return False
     if SHEET2_DIRECTION == "above":
-        return rec["diff"] > SHEET2_DIFF_THRESHOLD
-    return rec["diff"] < SHEET2_DIFF_THRESHOLD
+        return rec["diff"] > CROSSING_MARK
+    return rec["diff"] < CROSSING_MARK
 
 
 def _cmp_cell(rec):
@@ -224,9 +227,9 @@ def make_master_row(rec, row_num):
 
 
 def make_good_row(rec, row_num):
-    """9 columns A-I; H = G-F-25 (entry at +25%), I = profit on INVESTMENT_PER_IPO."""
+    """9 columns A-I; H = G-F-CROSSING_MARK (the buy point), I = profit on INVESTMENT_PER_IPO."""
     current_return = f'=IFERROR(((E{row_num}-C{row_num})/C{row_num})*100,"")'   # G
-    net_return = f'=IFERROR(G{row_num}-F{row_num}-25,"")'                        # H
+    net_return = f'=IFERROR(G{row_num}-F{row_num}-{CROSSING_MARK},"")'           # H
     profit = f'=IFERROR({INVESTMENT_PER_IPO}*H{row_num}/100,"")'                 # I
     return [rec["company"], rec["listing_date"], rec["issue_price"], rec["listing_price"],
             _cmp_cell(rec), rec["listing_gain"], current_return, net_return, profit]
@@ -255,10 +258,10 @@ def send_alert_email(new_crossers):
         return
     lines = [f"- {r['company']}: now {r['current_return']}% from issue, "
              f"{r['diff']}% above its listing price" for r in new_crossers]
-    body = (f"These IPO(s) just crossed the {SHEET2_DIFF_THRESHOLD}% mark "
+    body = (f"These IPO(s) just crossed the {CROSSING_MARK}% mark "
             f"(gain since listing):\n\n" + "\n".join(lines) + "\n\n-- IPO Tracker")
     msg = EmailMessage()
-    msg["Subject"] = f"IPO alert: {len(new_crossers)} share(s) crossed {SHEET2_DIFF_THRESHOLD}%"
+    msg["Subject"] = f"IPO alert: {len(new_crossers)} share(s) crossed {CROSSING_MARK}%"
     msg["From"] = SENDER_EMAIL
     msg["To"] = ", ".join(RECIPIENT_EMAILS)
     msg.set_content(body)
@@ -292,11 +295,15 @@ def main():
     rows2 = ws2.get_all_values()
     is_first_run = (len(rows2) <= 1)            # Good_IPOs empty -> first population
 
-    # Write headers ONLY when a sheet is empty (never touch existing rows).
+    # Always (re)write just the header row (row 1). Your IPO data is always at
+    # row 2 and below, so this only sets/repairs the headings and never touches
+    # or rebuilds your rows.
+    set_header(ws1, MASTER_HEADERS, MASTER_LAST_COL)
+    set_header(ws2, GOOD_HEADERS, GOOD_LAST_COL)
     if len(rows1) == 0:
-        set_header(ws1, MASTER_HEADERS, MASTER_LAST_COL); rows1 = [MASTER_HEADERS]
+        rows1 = [MASTER_HEADERS]
     if len(rows2) == 0:
-        set_header(ws2, GOOD_HEADERS, GOOD_LAST_COL); rows2 = [GOOD_HEADERS]
+        rows2 = [GOOD_HEADERS]
 
     existing1 = names_in(rows1)                 # already in IPOs 25-26
     existing2 = names_in(rows2)                 # already in Good_IPOs
