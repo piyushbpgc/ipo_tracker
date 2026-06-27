@@ -38,7 +38,7 @@ INCLUDE_REITS_INVITS = False
 # - an IPO moves to Good_IPOs when its gain-since-listing is above this %, and
 # - it is also the assumed buy point, so Net Return = Current - Listing - this %.
 # Change this single line to use a different marker (e.g. 30).
-CROSSING_MARK = 40
+CROSSING_MARK = 25
 SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING_MARK
 
 # One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
@@ -256,12 +256,30 @@ def names_in(rows):
 def send_alert_email(new_crossers):
     if not new_crossers or not SEND_EMAIL_ALERTS:
         return
-    lines = [f"- {r['company']}: now {r['current_return']}% from issue, "
-             f"{r['diff']}% above its listing price" for r in new_crossers]
-    body = (f"These IPO(s) just crossed the {CROSSING_MARK}% mark "
-            f"(gain since listing):\n\n" + "\n".join(lines) + "\n\n-- IPO Tracker")
+    blocks = []
+    for r in new_crossers:
+        cr, lg = r["current_return"], r["listing_gain"]
+        if isinstance(cr, (int, float)) and isinstance(lg, (int, float)):
+            net_return = round(cr - lg - CROSSING_MARK, 2)
+            profit = round(INVESTMENT_PER_IPO * net_return / 100, 2)
+        else:
+            net_return = profit = "N/A"
+        blocks.append(
+            f"BUY: {r['company']}  ->  invest Rs {INVESTMENT_PER_IPO}\n"
+            f"    Listing Date      : {r['listing_date']}\n"
+            f"    Issue Price       : Rs {r['issue_price']}\n"
+            f"    Listing Day Price : Rs {r['listing_price']}\n"
+            f"    Current Price     : Rs {r['cmp']}\n"
+            f"    Listing Gain      : {r['listing_gain']}%\n"
+            f"    Current Return    : {r['current_return']}%\n"
+            f"    Net Return (entry at +{CROSSING_MARK}%) : {net_return}%\n"
+            f"    Est. Profit on Rs {INVESTMENT_PER_IPO} : Rs {profit}"
+        )
+    body = (f"These IPO(s) just crossed the {CROSSING_MARK}% mark above their listing "
+            f"price. Suggested action - buy Rs {INVESTMENT_PER_IPO} of each:\n\n"
+            + "\n\n".join(blocks) + "\n\n-- IPO Tracker")
     msg = EmailMessage()
-    msg["Subject"] = f"IPO alert: {len(new_crossers)} share(s) crossed {CROSSING_MARK}%"
+    msg["Subject"] = f"BUY alert: {len(new_crossers)} IPO(s) crossed {CROSSING_MARK}%"
     msg["From"] = SENDER_EMAIL
     msg["To"] = ", ".join(RECIPIENT_EMAILS)
     msg.set_content(body)
@@ -331,17 +349,17 @@ def main():
         new_crossers.append(rec)
     write_block(ws2, next2, block2, GOOD_LAST_COL)
 
-    # ---- Net Profit/Loss: set up ONCE (formulas auto-update afterwards) -
-    if len(ws3.get_all_values()) == 0:
-        g = SHEET2_NAME
-        summary = [
-            ["Metric", "Value"],
-            ["Total Invested (Rs)", f"=COUNTA('{g}'!A2:A)*{INVESTMENT_PER_IPO}"],
-            ["Total Profit (Rs)", f"=SUM('{g}'!I2:I)"],
-            ["Net Profit / Loss (%)", '=IFERROR(B3/B2*100,"")'],
-        ]
-        ws3.update(values=summary, range_name="A1:B4", value_input_option="USER_ENTERED")
-        print("Net Profit/Loss tab set up.")
+    # ---- Net Profit/Loss: always (re)write the 4 small summary cells -----
+    # Reference the ACTUAL Good_IPOs tab name (ws2.title) so a stray space in
+    # the tab name can never break the formula with #REF.
+    g = ws2.title
+    summary = [
+        ["Metric", "Value"],
+        ["Total Invested (Rs)", f"=COUNTA('{g}'!A2:A)*{INVESTMENT_PER_IPO}"],
+        ["Total Profit (Rs)", f"=SUM('{g}'!I2:I)"],
+        ["Net Profit / Loss (%)", '=IFERROR(B3/B2*100,"")'],
+    ]
+    ws3.update(values=summary, range_name="A1:B4", value_input_option="USER_ENTERED")
 
     print(f"Done. {SHEET1_NAME}: +{added1} new IPO(s). "
           f"{SHEET2_NAME}: +{len(new_crossers)} newly crossed 25%.")
