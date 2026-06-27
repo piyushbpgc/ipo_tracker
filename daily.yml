@@ -1,0 +1,33 @@
+# Put this file at:  .github/workflows/daily.yml
+name: Daily IPO Tracker
+
+on:
+  schedule:
+    - cron: "30 5 * * *"      # 05:30 UTC = 11:00 AM India time, every day
+  workflow_dispatch:           # also adds a "Run workflow" button for manual runs
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Create the Google credentials file from a secret
+        run: printf '%s' "$GOOGLE_CREDENTIALS" > credentials.json
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+      - name: Run the tracker
+        env:
+          IPO_SHEET_ID:         ${{ secrets.IPO_SHEET_ID }}
+          IPO_CREDENTIALS_PATH: credentials.json
+          IPO_SENDER_EMAIL:     ${{ secrets.IPO_SENDER_EMAIL }}
+          IPO_APP_PASSWORD:     ${{ secrets.IPO_APP_PASSWORD }}
+          IPO_RECIPIENTS:       ${{ secrets.IPO_RECIPIENTS }}
+        run: python ipo_tracker.py

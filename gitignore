@@ -1,0 +1,7 @@
+# NEVER commit these - they are private to you
+credentials.json
+.env
+
+# python junk
+__pycache__/
+*.pyc
