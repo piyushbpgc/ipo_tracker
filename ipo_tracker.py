@@ -21,7 +21,7 @@ import os
 #  >>>>>>>>>>>>>>>>>>>>>>  CONFIG  -  EDIT ONLY THIS BLOCK  <<<<<<<<<<<<<<<<<<<<<<
 # -----------------------------------------------------------------------------
 
-YEARS = ["2025", "2026"]            # all the years you want, on one line
+YEARS = ["2024","2025", "2026"]            # all the years you want, on one line
 
 SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
 SHEET1_NAME = "IPOs 25-26"        # the full master list
