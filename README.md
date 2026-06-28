@@ -1,3 +1,4 @@
+Google sheet link: https://docs.google.com/spreadsheets/d/1dfxBWlvNF3J3Hv0DcvC86kuVe2YK8yxoim7c8LiGc0o/edit?gid=376427444#gid=376427444
 # IPO Tracker
 
 An automated tracker for Indian mainboard IPOs (NSE/BSE). It builds and maintains
