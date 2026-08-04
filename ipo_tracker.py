@@ -27,7 +27,7 @@ SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
 SHEET1_NAME = "IPOs 25-26"        # the full master list
 SHEET2_NAME = "Good_IPOs"         # only IPOs more than 25% above listing
 SHEET3_NAME = "Net Profit/Loss"   # the summary / rollup tab
-INVESTMENT_PER_IPO = 2000      # rupees invested per Good IPO (used in profit calc)
+INVESTMENT_PER_IPO = 5000     # rupees invested per Good IPO (used in profit calc)
 CREDENTIALS_PATH = os.environ.get(
     "IPO_CREDENTIALS_PATH", r"C:\Users\YourName\Desktop\IPOTracker\credentials.json")
 
@@ -50,7 +50,7 @@ EMAIL_ON_FIRST_RUN = True       # stay silent the first time (just seed memory)
 SENDER_EMAIL = os.environ.get("IPO_SENDER_EMAIL", "youremail@gmail.com")
 SENDER_APP_PASSWORD = os.environ.get("IPO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 RECIPIENT_EMAILS = os.environ.get(
-    "IPO_RECIPIENTS", "person1@example.com,person2@example.com").split(",")
+    "IPO_RECIPIENTS", "f20221448@goa.bits-pilani.ac.in,piyush.lalwani@licious.com").split(",")
 
 # -----------------------------------------------------------------------------
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>  END OF CONFIG  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
