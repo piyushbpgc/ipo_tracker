@@ -21,13 +21,13 @@ import os
 #  >>>>>>>>>>>>>>>>>>>>>>  CONFIG  -  EDIT ONLY THIS BLOCK  <<<<<<<<<<<<<<<<<<<<<<
 # -----------------------------------------------------------------------------
 
-YEARS = ["2024","2025", "2026"]            # all the years you want, on one line
+YEARS = ["2025", "2026"]            # all the years you want, on one line
 
 SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
 SHEET1_NAME = "IPOs 25-26"        # the full master list
 SHEET2_NAME = "Good_IPOs"         # only IPOs more than 25% above listing
 SHEET3_NAME = "Net Profit/Loss"   # the summary / rollup tab
-INVESTMENT_PER_IPO = 10000        # rupees invested per Good IPO (used in profit calc)
+INVESTMENT_PER_IPO = 2000      # rupees invested per Good IPO (used in profit calc)
 CREDENTIALS_PATH = os.environ.get(
     "IPO_CREDENTIALS_PATH", r"C:\Users\YourName\Desktop\IPOTracker\credentials.json")
 
@@ -38,15 +38,15 @@ INCLUDE_REITS_INVITS = False
 # - an IPO moves to Good_IPOs when its gain-since-listing is above this %, and
 # - it is also the assumed buy point, so Net Return = Current - Listing - this %.
 # Change this single line to use a different marker (e.g. 30).
-CROSSING_MARK = 35
+CROSSING_MARK = 30
 SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING_MARK
 
 # One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
-REBUILD = False
+REBUILD = True
 
 # Email alerts (fire when an IPO first enters Sheet2).
 SEND_EMAIL_ALERTS = True
-EMAIL_ON_FIRST_RUN = False        # stay silent the first time (just seed memory)
+EMAIL_ON_FIRST_RUN = True       # stay silent the first time (just seed memory)
 SENDER_EMAIL = os.environ.get("IPO_SENDER_EMAIL", "youremail@gmail.com")
 SENDER_APP_PASSWORD = os.environ.get("IPO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 RECIPIENT_EMAILS = os.environ.get(
