@@ -50,7 +50,7 @@ EMAIL_ON_FIRST_RUN = True # stay silent the first time (just seed memory)
 SENDER_EMAIL = os.environ.get("IPO_SENDER_EMAIL", "youremail@gmail.com")
 SENDER_APP_PASSWORD = os.environ.get("IPO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 RECIPIENT_EMAILS = os.environ.get(
-    "IPO_RECIPIENTS", "f20221448@goa.bits-pilani.ac.in","piyush.lalwani@licious.com").split(",")
+    "IPO_RECIPIENTS", "f20221448@goa.bits-pilani.ac.in").split(",")
 
 # -----------------------------------------------------------------------------
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>  END OF CONFIG  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
