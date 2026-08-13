@@ -21,7 +21,7 @@ import os
 #  >>>>>>>>>>>>>>>>>>>>>>  CONFIG  -  EDIT ONLY THIS BLOCK  <<<<<<<<<<<<<<<<<<<<<<
 # -----------------------------------------------------------------------------
 
-YEARS = ["2023","2024", "2025","2026"]            # all the years you want, on one line
+YEARS = ["2025","2026"]            # all the years you want, on one line
 
 SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
 SHEET1_NAME = "IPOs 25-26"        # the full master list
@@ -42,11 +42,11 @@ CROSSING_MARK = 30
 SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING_MARK
 
 # One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
-REBUILD = True
+REBUILD = TRUE
 
 # Email alerts (fire when an IPO first enters Sheet2).
 SEND_EMAIL_ALERTS = True
-EMAIL_ON_FIRST_RUN = True       # stay silent the first time (just seed memory)
+EMAIL_ON_FIRST_RUN = FALSE     # stay silent the first time (just seed memory)
 SENDER_EMAIL = os.environ.get("IPO_SENDER_EMAIL", "youremail@gmail.com")
 SENDER_APP_PASSWORD = os.environ.get("IPO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 RECIPIENT_EMAILS = os.environ.get(
