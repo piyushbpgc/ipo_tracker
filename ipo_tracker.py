@@ -46,7 +46,7 @@ REBUILD = TRUE
 
 # Email alerts (fire when an IPO first enters Sheet2).
 SEND_EMAIL_ALERTS = True
-EMAIL_ON_FIRST_RUN = FALSE     # stay silent the first time (just seed memory)
+EMAIL_ON_FIRST_RUN = False # stay silent the first time (just seed memory)
 SENDER_EMAIL = os.environ.get("IPO_SENDER_EMAIL", "youremail@gmail.com")
 SENDER_APP_PASSWORD = os.environ.get("IPO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 RECIPIENT_EMAILS = os.environ.get(
