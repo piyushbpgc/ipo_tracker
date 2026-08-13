@@ -42,7 +42,7 @@ CROSSING_MARK = 30
 SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING_MARK
 
 # One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
-REBUILD = False
+REBUILD = True
 
 # Email alerts (fire when an IPO first enters Sheet2).
 SEND_EMAIL_ALERTS = True
