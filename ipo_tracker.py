@@ -24,7 +24,7 @@ import os
 YEARS = ["2026"]            # all the years you want, on one line
 
 SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
-SHEET1_NAME = "IPOs 25-26"        # the full master list
+SHEET1_NAME = "IPOs 26"        # the full master list
 SHEET2_NAME = "Good_IPOs"         # only IPOs more than 25% above listing
 SHEET3_NAME = "Net Profit/Loss"   # the summary / rollup tab
 INVESTMENT_PER_IPO = 5000     # rupees invested per Good IPO (used in profit calc)
@@ -50,7 +50,7 @@ EMAIL_ON_FIRST_RUN = True # stay silent the first time (just seed memory)
 SENDER_EMAIL = os.environ.get("IPO_SENDER_EMAIL", "youremail@gmail.com")
 SENDER_APP_PASSWORD = os.environ.get("IPO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 RECIPIENT_EMAILS = os.environ.get(
-    "IPO_RECIPIENTS", "f20221448@goa.bits-pilani.ac.in").split(",")
+    "IPO_RECIPIENTS", "piyushlalwani2021@gmail.com").split(",")
 
 # -----------------------------------------------------------------------------
 #  >>>>>>>>>>>>>>>>>>>>>>>>>>>  END OF CONFIG  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
