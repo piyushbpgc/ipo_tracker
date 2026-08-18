@@ -4,13 +4,19 @@
 #  Sheet1 = EVERY IPO (master list). Add-only: new IPOs are appended, existing
 #           rows are never touched, so your notes and ordering stay put.
 #  Sheet2 = only IPOs whose Diff (Current Return - Listing Gain) > threshold.
-#           REBUILT every run, so an IPO that crosses the mark weeks AFTER
-#           listing shows up here automatically (and one that drops below
-#           leaves).
-#  Email  = every run, checks Good_IPOs for any row whose "Alert Sent" column
-#           is not TRUE (new crossers, or ones that failed to send before) and
-#           emails all of them in one message. Marks each row TRUE on success,
-#           leaves it FALSE (so it retries next run) if sending fails.
+#
+#  Email  = ONE separate email PER IPO (not batched).
+#           - REBUILD = True  -> Good_IPOs is wiped and rebuilt from scratch,
+#             so every IPO that ends up in Good_IPOs is "new" this run and
+#             gets its own email. Use this when you want a full refresh +
+#             alert for everything currently above the mark.
+#           - REBUILD = False -> only IPOs that newly cross the mark THIS
+#             run (i.e. weren't already in Good_IPOs) get emailed. Already-
+#             alerted IPOs are never re-emailed.
+#           Each Good_IPOs row also gets an "Alert Sent" column (TRUE/FALSE)
+#           so you can see at a glance what actually went out; if sending
+#           fails for a given IPO it stays FALSE and will be retried the
+#           next time that row would otherwise qualify.
 #
 #  Secrets can be read from environment variables (used by the GitHub Actions
 #  cloud run) and otherwise fall back to the values typed below.
@@ -26,7 +32,7 @@ YEARS = ["2026"]            # all the years you want, on one line
 
 SHEET_ID = os.environ.get("IPO_SHEET_ID", "PASTE_YOUR_GOOGLE_SHEET_ID_HERE")
 SHEET1_NAME = "IPOs 26"        # the full master list
-SHEET2_NAME = "Good_IPOs"         # only IPOs more than 25% above listing
+SHEET2_NAME = "Good_IPOs"         # only IPOs more than 30% above listing
 SHEET3_NAME = "Net Profit/Loss"   # the summary / rollup tab
 INVESTMENT_PER_IPO = 5000     # rupees invested per Good IPO (used in profit calc)
 CREDENTIALS_PATH = os.environ.get(
@@ -38,16 +44,15 @@ INCLUDE_REITS_INVITS = False
 # THE ONE NUMBER THAT CONTROLS EVERYTHING:
 # - an IPO moves to Good_IPOs when its gain-since-listing is above this %, and
 # - it is also the assumed buy point, so Net Return = Current - Listing - this %.
-# Change this single line to use a different marker (e.g. 30).
 CROSSING_MARK = 30
 SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING_MARK
 
-# One-time helper: True wipes both sheets and rebuilds. Leave False for daily.
-REBUILD = True
+# True  = wipe + rebuild Good_IPOs from scratch, email for EVERY IPO in it.
+# False = normal daily run, email only for IPOs that newly cross the mark.
+REBUILD = False
 
 # Email alerts.
 SEND_EMAIL_ALERTS = True
-EMAIL_ON_FIRST_RUN = True  # False = seed Good_IPOs silently on the very first run
 SENDER_EMAIL = os.environ.get("IPO_SENDER_EMAIL", "youremail@gmail.com")
 SENDER_APP_PASSWORD = os.environ.get("IPO_APP_PASSWORD", "xxxx xxxx xxxx xxxx")
 RECIPIENT_EMAILS = os.environ.get(
@@ -91,7 +96,6 @@ GOOD_HEADERS = [
 ]
 GOOD_LAST_COL = "J"
 ALERT_SENT_COL = "J"        # column letter for the Alert Sent flag
-ALERT_SENT_IDX = 9          # 0-based index of "Alert Sent" within a Good_IPOs row
 
 
 # ----------------------------- scraping --------------------------------------
@@ -216,22 +220,9 @@ def in_sheet2(rec):
 
 
 def _cmp_cell(rec):
-    """
-    Live price cell for Current Price.
-    Tries NSE via GOOGLEFINANCE first. If that errors/returns nothing, falls
-    back to BSE via GOOGLEFINANCE. If that also fails, falls back to the
-    closing price already scraped from Chittorgarh (or "N/A" if we have none).
-    This stops rows from going blank/#N/A just because GOOGLEFINANCE hasn't
-    indexed a freshly-listed ticker yet.
-    """
-    ticker = rec["ticker"]
-    fallback_literal = rec["cmp"] if rec["cmp"] != "" else '"N/A"'
-
-    if USE_GOOGLEFINANCE_FORMULA and ticker:
-        return (
-            f'=IFERROR(GOOGLEFINANCE("NSE:{ticker}","price"),'
-            f'IFERROR(GOOGLEFINANCE("BSE:{ticker}","price"),{fallback_literal}))'
-        )
+    """Current Price cell - plain GOOGLEFINANCE formula, untouched."""
+    if USE_GOOGLEFINANCE_FORMULA and rec["ticker"]:
+        return f'=GOOGLEFINANCE("NSE:{rec["ticker"]}","price")'
     if rec["cmp"] != "":
         return rec["cmp"]
     return "SYMBOL NOT FOUND"
@@ -248,8 +239,8 @@ def make_master_row(rec, row_num):
 def make_good_row(rec, row_num):
     """
     10 columns A-J; H = G-F-CROSSING_MARK (the buy point), I = profit on
-    INVESTMENT_PER_IPO, J = Alert Sent flag (starts FALSE; set TRUE once the
-    email for this row has actually gone out).
+    INVESTMENT_PER_IPO, J = Alert Sent flag (set once the per-IPO email for
+    this row is actually sent).
     """
     current_return = f'=IFERROR(((E{row_num}-C{row_num})/C{row_num})*100,"")'   # G
     net_return = f'=IFERROR(G{row_num}-F{row_num}-{CROSSING_MARK},"")'           # H
@@ -277,33 +268,25 @@ def names_in(rows):
 
 
 # ----------------------------- email -----------------------------------------
-def _build_email_body(rows_with_numbers):
-    """rows_with_numbers: list of (row_number, row_values) from Good_IPOs."""
-    blocks = []
-    for _, row in rows_with_numbers:
-        name = row[0] if len(row) > 0 else ""
-        listing_date = row[1] if len(row) > 1 else ""
-        issue_price = row[2] if len(row) > 2 else ""
-        listing_day_price = row[3] if len(row) > 3 else ""
-        current_price = row[4] if len(row) > 4 else ""
-        listing_gain = row[5] if len(row) > 5 else ""
-        current_return = row[6] if len(row) > 6 else ""
-        net_return = row[7] if len(row) > 7 else ""
-        profit = row[8] if len(row) > 8 else ""
-        blocks.append(
-            f"BUY: {name}  ->  invest Rs {INVESTMENT_PER_IPO}\n"
-            f"    Listing Date      : {listing_date}\n"
-            f"    Issue Price       : Rs {issue_price}\n"
-            f"    Listing Day Price : Rs {listing_day_price}\n"
-            f"    Current Price     : Rs {current_price}\n"
-            f"    Listing Gain      : {listing_gain}%\n"
-            f"    Current Return    : {current_return}%\n"
-            f"    Net Return (entry at +{CROSSING_MARK}%) : {net_return}%\n"
-            f"    Est. Profit on Rs {INVESTMENT_PER_IPO} : Rs {profit}"
-        )
-    return (f"These IPO(s) are above the {CROSSING_MARK}% mark above their listing "
-            f"price. Suggested action - buy Rs {INVESTMENT_PER_IPO} of each:\n\n"
-            + "\n\n".join(blocks) + "\n\n-- IPO Tracker")
+def _build_email_body(rec):
+    cr, lg = rec["current_return"], rec["listing_gain"]
+    if isinstance(cr, (int, float)) and isinstance(lg, (int, float)):
+        net_return = round(cr - lg - CROSSING_MARK, 2)
+        profit = round(INVESTMENT_PER_IPO * net_return / 100, 2)
+    else:
+        net_return = profit = "N/A"
+    return (
+        f"BUY: {rec['company']}  ->  invest Rs {INVESTMENT_PER_IPO}\n"
+        f"    Listing Date      : {rec['listing_date']}\n"
+        f"    Issue Price       : Rs {rec['issue_price']}\n"
+        f"    Listing Day Price : Rs {rec['listing_price']}\n"
+        f"    Current Price     : Rs {rec['cmp']}\n"
+        f"    Listing Gain      : {rec['listing_gain']}%\n"
+        f"    Current Return    : {rec['current_return']}%\n"
+        f"    Net Return (entry at +{CROSSING_MARK}%) : {net_return}%\n"
+        f"    Est. Profit on Rs {INVESTMENT_PER_IPO} : Rs {profit}\n\n"
+        f"-- IPO Tracker"
+    )
 
 
 def _send_email(subject, body):
@@ -318,65 +301,34 @@ def _send_email(subject, body):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as server:
             server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
             server.send_message(msg)
-        print(f"Email sent to {len(RECIPIENT_EMAILS)} recipient(s).")
         return True
     except Exception as error:
-        print(f"WARNING: could not send email -> {error}")
+        print(f"WARNING: could not send email for this IPO -> {error}")
         return False
 
 
-def send_pending_alerts(ws2):
+def send_alert_emails(ws2, crossers_with_rows):
     """
-    Source of truth is the sheet itself, not this run's scrape. Reads every
-    row in Good_IPOs, finds the ones whose Alert Sent column is not TRUE
-    (brand-new rows, or ones where a previous email attempt failed), and
-    emails ALL of them together in one message. Marks each row TRUE on
-    success; leaves it FALSE (so it's retried automatically next run) if the
-    send fails.
+    Sends ONE separate email per IPO in crossers_with_rows = [(rec, row_num), ...].
+    Marks that row's Alert Sent column TRUE on success, FALSE on failure.
     """
-    if not SEND_EMAIL_ALERTS:
+    if not SEND_EMAIL_ALERTS or not crossers_with_rows:
         return
 
-    rows = ws2.get_all_values()
-    if len(rows) <= 1:
-        print("Good_IPOs is empty - nothing to alert on.")
-        return
+    updates = []
+    sent_count = 0
+    for rec, row_num in crossers_with_rows:
+        subject = f"BUY alert: {rec['company']} crossed {CROSSING_MARK}%"
+        body = _build_email_body(rec)
+        ok = _send_email(subject, body)
+        updates.append({"range": f"{ALERT_SENT_COL}{row_num}", "values": [["TRUE" if ok else "FALSE"]]})
+        if ok:
+            sent_count += 1
+            print(f"Email sent: {rec['company']}")
 
-    pending = []
-    for row_num, row in enumerate(rows[1:], start=2):
-        if not row or not row[0].strip():
-            continue
-        alert_sent = row[ALERT_SENT_IDX].strip().upper() if len(row) > ALERT_SENT_IDX else ""
-        if alert_sent != "TRUE":
-            pending.append((row_num, row))
-
-    if not pending:
-        print("No pending alerts - everything in Good_IPOs is already marked sent.")
-        return
-
-    subject = f"BUY alert: {len(pending)} IPO(s) crossed {CROSSING_MARK}%"
-    body = _build_email_body(pending)
-    sent_ok = _send_email(subject, body)
-
-    status_value = "TRUE" if sent_ok else "FALSE"
-    updates = [{"range": f"{ALERT_SENT_COL}{row_num}", "values": [[status_value]]}
-               for row_num, _ in pending]
-    ws2.batch_update(updates, value_input_option="USER_ENTERED")
-
-    if sent_ok:
-        print(f"Marked {len(pending)} row(s) as Alert Sent = TRUE.")
-    else:
-        print(f"Left {len(pending)} row(s) as Alert Sent = FALSE - will retry next run.")
-
-
-def seed_alerts_silently(ws2, row_numbers):
-    """First-run seeding: mark rows TRUE without emailing (EMAIL_ON_FIRST_RUN=False)."""
-    if not row_numbers:
-        return
-    updates = [{"range": f"{ALERT_SENT_COL}{row_num}", "values": [["TRUE"]]}
-               for row_num in row_numbers]
-    ws2.batch_update(updates, value_input_option="USER_ENTERED")
-    print(f"First run: seeded {len(row_numbers)} row(s) in Good_IPOs, no email sent.")
+    if updates:
+        ws2.batch_update(updates, value_input_option="USER_ENTERED")
+    print(f"Alert emails: {sent_count}/{len(crossers_with_rows)} sent successfully.")
 
 
 # ----------------------------- main ------------------------------------------
@@ -392,12 +344,12 @@ def main():
     ws3 = get_or_create_ws(ss, SHEET3_NAME)     # Net Profit/Loss
 
     if REBUILD:
-        print("REBUILD is ON: wiping all three sheets (set False for daily use).")
+        print("REBUILD is ON: wiping all three sheets. "
+              "Every IPO that ends up in Good_IPOs will get its own email.")
         ws1.clear(); ws2.clear(); ws3.clear()
 
     rows1 = ws1.get_all_values()
     rows2 = ws2.get_all_values()
-    is_first_run = (len(rows2) <= 1)            # Good_IPOs empty -> first population
 
     # Always (re)write just the header row (row 1). Your IPO data is always at
     # row 2 and below, so this only sets/repairs the headings and never touches
@@ -422,22 +374,26 @@ def main():
         existing1.add(rec["company"].lower()); added1 += 1
     write_block(ws1, next1, block1, MASTER_LAST_COL)
 
-    # ---- Good_IPOs: append only IPOs that have NEWLY crossed the mark ----
-    next2, block2, r2, new_crossers = max(2, len(rows2) + 1), [], 0, []
+    # ---- Good_IPOs: append IPOs that have (newly) crossed the mark -------
+    # When REBUILD=True, existing2 is empty (sheet was wiped), so every IPO
+    # above the mark lands here and gets emailed. When REBUILD=False,
+    # existing2 still holds previously-alerted IPOs, so only genuinely new
+    # crossers show up here and get emailed.
+    next2, block2, r2 = max(2, len(rows2) + 1), [], 0
+    crossers_with_rows = []
     r2 = next2
     for rec in records:
-        if not in_sheet2(rec):                  # not above the mark yet
+        if not in_sheet2(rec):                  # not above the mark
             continue
-        if rec["company"].lower() in existing2: # already counted before
+        if rec["company"].lower() in existing2: # already in Good_IPOs
             continue
-        block2.append(make_good_row(rec, r2)); r2 += 1
+        block2.append(make_good_row(rec, r2))
+        crossers_with_rows.append((rec, r2))
+        r2 += 1
         existing2.add(rec["company"].lower())
-        new_crossers.append(rec)
     write_block(ws2, next2, block2, GOOD_LAST_COL)
 
     # ---- Net Profit/Loss: always (re)write the 4 small summary cells -----
-    # Reference the ACTUAL Good_IPOs tab name (ws2.title) so a stray space in
-    # the tab name can never break the formula with #REF.
     g = ws2.title
     summary = [
         ["Metric", "Value"],
@@ -448,15 +404,10 @@ def main():
     ws3.update(values=summary, range_name="A1:B4", value_input_option="USER_ENTERED")
 
     print(f"Done. {SHEET1_NAME}: +{added1} new IPO(s). "
-          f"{SHEET2_NAME}: +{len(new_crossers)} newly crossed {CROSSING_MARK}%.")
+          f"{SHEET2_NAME}: +{len(crossers_with_rows)} IPO(s) to alert on.")
 
-    # ---- Email: driven by the sheet's Alert Sent column, not just this ---
-    # ---- run's new_crossers, so nothing ever silently stays unemailed. ---
-    if is_first_run and not EMAIL_ON_FIRST_RUN and new_crossers:
-        new_row_numbers = list(range(next2, next2 + len(new_crossers)))
-        seed_alerts_silently(ws2, new_row_numbers)
-    else:
-        send_pending_alerts(ws2)
+    # ---- Email: one per IPO -----------------------------------------------
+    send_alert_emails(ws2, crossers_with_rows)
 
 
 if __name__ == "__main__":
