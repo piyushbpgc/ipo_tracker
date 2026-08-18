@@ -49,7 +49,7 @@ SHEET2_DIRECTION = "above"          # "above": in Good_IPOs when Diff > CROSSING
 
 # True  = wipe + rebuild Good_IPOs from scratch, email for EVERY IPO in it.
 # False = normal daily run, email only for IPOs that newly cross the mark.
-REBUILD = False
+REBUILD = True
 
 # Email alerts.
 SEND_EMAIL_ALERTS = True
